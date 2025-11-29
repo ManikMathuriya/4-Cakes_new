@@ -1,0 +1,434 @@
+<!-- Diabetes Prediction Dashboard - Full Frontend (Single File)
+Save this file as index.html in your frontend folder. It contains HTML, CSS and JS (all-in-one) and is wired to your backend at http://127.0.0.1:5000
+
+Features:
+- Sidebar navigation and responsive layout
+- Prediction forms: Diabetes, Stress
+- Face emotion analysis (upload + camera capture)
+- Interactive charts (Chart.js) showing sample and live results
+- Clear fetch calls to your backend endpoints
+
+Usage:
+1. Save this file as `index.html`.
+2. Open in browser (best served via a simple static server — see notes below).
+3. Make sure your backend is running at http://127.0.0.1:5000
+
+Notes:
+- Browsers restrict camera access on local files in some cases. Prefer serving with a static server like `npx serve` or `python -m http.server`.
+- CORS must be enabled on backend for requests from the frontend origin.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HealthAI Guardian — Dashboard</title>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{--bg:#f3f6fb;--card:#fff;--muted:#6b7280;--accent:#2563eb}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial; background:var(--bg);color:#111}
+    .app{display:flex;min-height:100vh}
+    /* Sidebar */
+    .sidebar{width:260px;background:linear-gradient(180deg,#0f172a,#0b1220);color:white;padding:28px 20px;display:flex;flex-direction:column;gap:18px}
+    .brand{font-weight:700;font-size:18px;letter-spacing:0.3px}
+    .nav{list-style:none;padding:0;margin:6px 0 0 0;display:flex;flex-direction:column;gap:8px}
+    .nav button{background:transparent;border:0;color:inherit;text-align:left;padding:12px;border-radius:8px;cursor:pointer;font-weight:600}
+    .nav button:hover{background:rgba(255,255,255,0.06)}
+    .nav button.active{background:rgba(255,255,255,0.09)}
+    .sidebar .small{font-size:12px;color:#cbd5e1}
+
+    /* Main area */
+    .main{flex:1;padding:28px;min-width:0}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    .search{display:flex;gap:8px;align-items:center}
+    .card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(11,20,34,0.06)}
+
+    /* Grid */
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+    .col-4{grid-column:span 4}
+    .col-6{grid-column:span 6}
+    .col-8{grid-column:span 8}
+    .col-12{grid-column:span 12}
+
+    /* Forms */
+    form .row{display:flex;gap:12px;margin-bottom:12px}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input[type=number],input[type=text],select{width:100%;padding:10px;border-radius:8px;border:1px solid #e6eef9;background:#fbfdff}
+    button.primary{background:var(--accent);color:white;padding:10px 14px;border-radius:8px;border:0;cursor:pointer;font-weight:700}
+    button.ghost{background:transparent;border:1px solid #e6eef9;padding:10px 12px;border-radius:8px;cursor:pointer}
+
+    /* Image preview */
+    .preview{width:100%;height:260px;border-radius:8px;background:#f8fafc;border:2px dashed #e6eef9;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .preview img{max-width:100%;max-height:100%}
+
+    /* Result box */
+    .result{padding:12px;border-radius:10px;margin-top:12px}
+    .result.success{background:#ecfdf5;border:1px solid #bbf7d0;color:#064e3b}
+    .result.warn{background:#fff7ed;border:1px solid #ffd8a8;color:#92400e}
+
+    /* Responsive */
+    @media (max-width:900px){
+      .sidebar{display:none}
+      .main{padding:16px}
+      .grid{grid-template-columns:repeat(6,1fr)}
+      .col-4{grid-column:span 6}
+      .col-6{grid-column:span 6}
+      .col-8{grid-column:span 6}
+    }
+
+    footer{margin-top:18px;text-align:center;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">HealthAI Guardian</div>
+      <div class="small">AI-Powered Health Predictions</div>
+
+      <ul class="nav" id="nav">
+        <li><button class="active" data-page="dashboard">Dashboard</button></li>
+        <li><button data-page="diabetes">Diabetes Risk</button></li>
+        <li><button data-page="stress">Stress Assessment</button></li>
+        <li><button data-page="face">Face Emotion</button></li>
+        <li><button data-page="about">About</button></li>
+      </ul>
+
+      <div style="margin-top:auto;font-size:12px;opacity:0.9">Local API: <strong>http://127.0.0.1:5000</strong></div>
+    </aside>
+
+    <main class="main">
+      <header>
+        <div>
+          <h2 style="margin:0">Dashboard</h2>
+          <div style="color:var(--muted);font-size:13px">Overview & quick actions</div>
+        </div>
+        <div class="search">
+          <input id="filter" placeholder="Search or filter" style="padding:8px 12px;border-radius:8px;border:1px solid #e6eef9;background:white" />
+          <button class="ghost" onclick="refreshStats()">Refresh</button>
+        </div>
+      </header>
+
+      <!-- Dashboard / Pages container -->
+      <section id="pages">
+
+        <!-- Dashboard overview -->
+        <div id="dashboard" class="grid" style="align-items:start">
+          <div class="card col-4">
+            <h3 style="margin:0 0 8px 0">Quick Predict</h3>
+            <p style="margin:0 0 12px 0;color:var(--muted)">Use a short form for a quick diabetes check.</p>
+            <form id="quickForm">
+              <div class="row">
+                <div style="flex:1"><label>Glucose</label><input id="q_glucose" type="number" min="0" required></div>
+                <div style="flex:1"><label>BMI</label><input id="q_bmi" type="number" min="0" step="0.1" required></div>
+              </div>
+              <div class="row">
+                <div style="flex:1"><label>Age</label><input id="q_age" type="number" min="0" required></div>
+                <div style="flex:1"><label>Blood Pressure</label><input id="q_bp" type="number" min="0" required></div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button type="submit" class="primary">Predict</button>
+                <button type="button" class="ghost" onclick="clearQuick()">Clear</button>
+              </div>
+              <div id="quickResult" style="margin-top:12px"></div>
+            </form>
+          </div>
+
+          <div class="card col-8">
+            <h3 style="margin-top:0">Recent Predictions</h3>
+            <canvas id="historyChart" style="width:100%;height:220px"></canvas>
+          </div>
+
+          <div class="card col-6">
+            <h3 style="margin-top:0">Stress Snapshot</h3>
+            <p style="color:var(--muted)">Live stress predictions from the model.</p>
+            <div id="stressList"></div>
+          </div>
+
+          <div class="card col-6">
+            <h3 style="margin-top:0">Face Emotion Example</h3>
+            <p style="color:var(--muted)">Upload a face from the Face tab to analyze emotions.</p>
+            <div class="preview" id="smallPreview">No image yet</div>
+          </div>
+        </div>
+
+        <!-- Diabetes Form Page -->
+        <div id="diabetes" style="display:none">
+          <div class="card">
+            <h3>Diabetes Risk Assessment</h3>
+            <p style="color:var(--muted)">Complete form for more accurate results.</p>
+            <form id="diabetesForm">
+              <div class="grid">
+                <div class="col-6"><label>Pregnancies</label><input id="pregnancies" type="number" min="0" value="0"></div>
+                <div class="col-6"><label>Glucose</label><input id="glucose2" type="number" min="0" value="120"></div>
+                <div class="col-6"><label>Blood Pressure</label><input id="bp2" type="number" min="0" value="80"></div>
+                <div class="col-6"><label>Skin Thickness</label><input id="skin" type="number" min="0" value="20"></div>
+                <div class="col-6"><label>Insulin</label><input id="insulin" type="number" min="0" value="80"></div>
+                <div class="col-6"><label>BMI</label><input id="bmi2" type="number" min="0" step="0.1" value="25"></div>
+                <div class="col-6"><label>Diabetes Pedigree</label><input id="dpf" type="number" min="0" step="0.01" value="0.5"></div>
+                <div class="col-6"><label>Age</label><input id="age2" type="number" min="1" max="120" value="30"></div>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px">
+                <button type="submit" class="primary">Predict Diabetes</button>
+                <button type="button" class="ghost" onclick="document.getElementById('diabetesForm').reset()">Reset</button>
+              </div>
+              <div id="diabetesResult"></div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Stress Form Page -->
+        <div id="stress" style="display:none">
+          <div class="card">
+            <h3>Student Stress Level Assessment</h3>
+            <form id="stressForm">
+              <div class="row">
+                <div style="flex:1"><label>Anxiety Level (1-20)</label><input id="anxiety" type="number" min="1" max="20" value="10"></div>
+                <div style="flex:1"><label>Depression (1-20)</label><input id="depression" type="number" min="1" max="20" value="10"></div>
+              </div>
+              <div class="row">
+                <div style="flex:1"><label>Sleep Quality (1-5)</label><input id="sleep" type="number" min="1" max="5" value="3"></div>
+                <div style="flex:1"><label>Peer Pressure (1-5)</label><input id="peer" type="number" min="1" max="5" value="3"></div>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px">
+                <button class="primary" type="submit">Predict Stress</button>
+                <button type="button" class="ghost" onclick="document.getElementById('stressForm').reset()">Reset</button>
+              </div>
+            </form>
+            <div id="stressResult"></div>
+          </div>
+        </div>
+
+        <!-- Face Emotion Page -->
+        <div id="face" style="display:none">
+          <div class="card">
+            <h3>Face Emotion Analysis</h3>
+            <p style="color:var(--muted)">Upload an image or use your webcam.</p>
+            <div style="display:flex;gap:12px;margin-bottom:12px;align-items:start">
+              <div style="flex:1">
+                <div class="preview" id="preview">No image selected</div>
+                <div style="display:flex;gap:8px;margin-top:8px">
+                  <label class="ghost" style="cursor:pointer;display:inline-block;padding:8px 12px"><input id="fileInput" type="file" accept="image/*" style="display:none">Upload Image</label>
+                  <button class="ghost" id="startCam">Start Camera</button>
+                  <button class="primary" id="captureBtn" disabled>Capture</button>
+                </div>
+              </div>
+              <div style="width:280px">
+                <div style="margin-bottom:12px">
+                  <label>Preview:</label>
+                  <div class="preview" id="faceResultSmall">No face yet</div>
+                </div>
+                <div>
+                  <button class="primary" id="analyzeBtn" disabled>Analyze Emotion</button>
+                </div>
+                <div id="faceResult" style="margin-top:12px"></div>
+              </div>
+            </div>
+            <video id="video" style="display:none;width:100%;border-radius:8px"></video>
+          </div>
+        </div>
+
+        <!-- About -->
+        <div id="about" style="display:none">
+          <div class="card">
+            <h3>About This Project</h3>
+            <p style="color:var(--muted)">This demo shows an end-to-end frontend for health predictions (diabetes, stress, face emotion) and is intended for educational purposes only.</p>
+            <p style="color:var(--muted)">Always consult healthcare professionals for real medical advice.</p>
+          </div>
+        </div>
+
+      </section>
+
+      <footer>Made with ❤️ — HealthAI Guardian</footer>
+    </main>
+  </div>
+
+  <script>
+    // Base API URL (from user)
+    const API_BASE = 'http://127.0.0.1:5000';
+
+    // Utility: show page
+    document.querySelectorAll('#nav button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        const page = btn.dataset.page;
+        document.querySelectorAll('#pages > div').forEach(p=>p.style.display='none');
+        const el = document.getElementById(page);
+        if (el) el.style.display = page === 'dashboard' ? 'grid' : 'block';
+        // small preview update
+        if(page==='face') updateSmallPreview(null);
+      });
+    });
+
+    // Quick form
+    const quickForm = document.getElementById('quickForm');
+    quickForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        Glucose: Number(document.getElementById('q_glucose').value),
+        BMI: Number(document.getElementById('q_bmi').value),
+        Age: Number(document.getElementById('q_age').value),
+        BloodPressure: Number(document.getElementById('q_bp').value),
+      };
+      setQuickResult('Analyzing...');
+      try {
+        const res = await fetch(`${API_BASE}/health/predict/diabetes`, {
+          method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+        if(!res.ok) throw new Error('Server error');
+        const data = await res.json();
+        setQuickResult(formatDiabetesResult(data));
+        pushHistory(data);
+      } catch(err){
+        setQuickResult('<div class="result warn">'+err.message+'</div>');
+      }
+    });
+    function setQuickResult(html){ document.getElementById('quickResult').innerHTML = html; }
+    function clearQuick(){ quickForm.reset(); document.getElementById('quickResult').innerHTML=''; }
+
+    // Diabetes full form
+    document.getElementById('diabetesForm').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const payload = {
+        Pregnancies: Number(document.getElementById('pregnancies').value) || 0,
+        Glucose: Number(document.getElementById('glucose2').value) || 0,
+        BloodPressure: Number(document.getElementById('bp2').value) || 0,
+        SkinThickness: Number(document.getElementById('skin').value) || 0,
+        Insulin: Number(document.getElementById('insulin').value) || 0,
+        BMI: Number(document.getElementById('bmi2').value) || 0,
+        DiabetesPedigreeFunction: Number(document.getElementById('dpf').value) || 0,
+        Age: Number(document.getElementById('age2').value) || 0
+      };
+      const out = document.getElementById('diabetesResult'); out.innerHTML = 'Analyzing...';
+      try{
+        const res = await fetch(`${API_BASE}/health/predict/diabetes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        if(!res.ok) throw new Error('Prediction failed');
+        const data = await res.json();
+        out.innerHTML = formatDiabetesResult(data);
+        pushHistory(data);
+      }catch(err){ out.innerHTML = '<div class="result warn">'+err.message+'</div>'; }
+    });
+
+    function formatDiabetesResult(data){
+      // Expecting {diabetes_prediction:0/1, risk_level: 'Low Risk'|'High Risk', probability:[p0,p1]}
+      if(!data) return '';
+      const positive = data.diabetes_prediction === 1;
+      const cls = positive ? 'result warn' : 'result success';
+      const prob = data.probability ? `Confidence: ${(data.probability[1]*100).toFixed(1)}%` : '';
+      return `<div class="${cls}"><strong>${positive? 'Positive' : 'Negative'}</strong> — ${data.risk_level || ''}<div style="font-size:13px;margin-top:6px;color:#334155">${prob}</div></div>`;
+    }
+
+    // Stress form
+    document.getElementById('stressForm').addEventListener('submit', async e=>{
+      e.preventDefault();
+      const payload = {
+        anxiety_level: Number(document.getElementById('anxiety').value),
+        depression: Number(document.getElementById('depression').value),
+        sleep_quality: Number(document.getElementById('sleep').value),
+        peer_pressure: Number(document.getElementById('peer').value)
+      };
+      const out = document.getElementById('stressResult'); out.innerHTML = 'Analyzing...';
+      try{
+        const res = await fetch(`${API_BASE}/health/predict/stress`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        if(!res.ok) throw new Error('Prediction failed');
+        const data = await res.json();
+        out.innerHTML = `<div class="result ${data.stress_prediction===1 ? 'warn' : 'success'}"><strong>Stress:</strong> ${data.stress_level || ''}</div>`;
+        appendStress(data);
+      }catch(err){ out.innerHTML = '<div class="result warn">'+err.message+'</div>'; }
+    });
+
+    // Face emotion handling
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const faceResult = document.getElementById('faceResult');
+    const startCam = document.getElementById('startCam');
+    const captureBtn = document.getElementById('captureBtn');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const video = document.getElementById('video');
+    let stream = null; let lastImageBase64 = null;
+
+    fileInput.addEventListener('change', ()=>{
+      const f = fileInput.files[0]; if(!f) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{ updatePreview(reader.result); lastImageBase64 = reader.result.split(',')[1]; analyzeBtn.disabled = false; captureBtn.disabled = true; };
+      reader.readAsDataURL(f);
+    });
+
+    startCam.addEventListener('click', async ()=>{
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({video:true});
+        video.srcObject = stream; video.style.display='block'; video.play(); captureBtn.disabled = false; analyzeBtn.disabled = true;
+        // attach small preview
+        updatePreview(null);
+      }catch(err){ alert('Camera access denied or not available.'); }
+    });
+
+    captureBtn.addEventListener('click', ()=>{
+      if(!video) return; const canvas=document.createElement('canvas'); canvas.width=video.videoWidth; canvas.height=video.videoHeight; canvas.getContext('2d').drawImage(video,0,0);
+      const dataURL = canvas.toDataURL('image/jpeg'); updatePreview(dataURL); lastImageBase64 = dataURL.split(',')[1]; analyzeBtn.disabled=false;
+      // stop camera
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; video.style.display='none'; }
+    });
+
+    analyzeBtn.addEventListener('click', async ()=>{
+      if(!lastImageBase64) return; faceResult.innerHTML='Analyzing...';
+      try{
+        const res = await fetch(`${API_BASE}/health/face-emotion`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:lastImageBase64})});
+        if(!res.ok) throw new Error('Analysis failed');
+        const data = await res.json();
+        faceResult.innerHTML = `<div class="result success">Detected: <strong>${data.estimated_emotion||data.emotion||'Unknown'}</strong></div>`;
+        updateSmallPreview(lastImageBase64);
+      }catch(err){ faceResult.innerHTML = '<div class="result warn">'+err.message+'</div>' }
+    });
+
+    function updatePreview(dataURL){
+      const el = document.getElementById('preview'); el.innerHTML='';
+      if(!dataURL){ el.textContent='No image selected'; return; }
+      const img = document.createElement('img'); img.src = dataURL; el.appendChild(img);
+    }
+    function updateSmallPreview(base64){ const el = document.getElementById('smallPreview'); el.innerHTML=''; if(!base64) { el.textContent='No image yet'; return;} const img=document.createElement('img'); img.src = base64.startsWith('data:')? base64 : 'data:image/jpeg;base64,'+base64; el.appendChild(img); }
+
+    // Stats & Chart
+    const historyCtx = document.getElementById('historyChart').getContext('2d');
+    let historyChart = new Chart(historyCtx, {type:'line',data:{labels:[],datasets:[{label:'Diabetes positive probability',data:[],fill:true,tension:0.3}]},options:{responsive:true,plugins:{legend:{display:false}}}});
+    function pushHistory(pred){
+      const now = new Date().toLocaleTimeString();
+      const prob = pred.probability ? (pred.probability[1]*100) : (pred.diabetes_prediction ? 90:10);
+      historyChart.data.labels.push(now); historyChart.data.datasets[0].data.push(prob); if(historyChart.data.labels.length>12){ historyChart.data.labels.shift(); historyChart.data.datasets[0].data.shift(); }
+      historyChart.update();
+    }
+
+    // Sample stress list
+    function appendStress(obj){
+      const list = document.getElementById('stressList'); const d=document.createElement('div'); d.className='result ' + (obj.stress_prediction===1? 'warn':'success'); d.style.marginBottom='8px'; d.innerHTML = `<strong>${obj.stress_level||'N/A'}</strong> — ${obj.message||''}`; list.prepend(d);
+    }
+
+    // Refresh stats - optionally call backend to fetch aggregated stats
+    async function refreshStats(){
+      // placeholder: you could implement an endpoint on backend that returns aggregated stats
+      // for demo we just add a random point
+      pushHistory({diabetes_prediction:Math.random()>0.6?1:0, probability:[Math.random(),Math.random()]});
+    }
+
+    // Navigation helper by id (used by initial canvas)
+    function showPage(pageId){ document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active')); const btn = [...document.querySelectorAll('#nav button')].find(b=>b.dataset.page===pageId); if(btn) btn.classList.add('active'); document.querySelectorAll('#pages > div').forEach(p=>p.style.display='none'); const el = document.getElementById(pageId); if(el) el.style.display = (pageId==='dashboard' ? 'grid' : 'block'); }
+
+    // Small helpers
+    function formatDiabetesResultText(d){ return d && d.risk_level ? d.risk_level : 'No result'; }
+
+    // Init: sample data
+    (function init(){
+      // populate chart with placeholder points
+      for(let i=0;i<6;i++){ historyChart.data.labels.push(''); historyChart.data.datasets[0].data.push(Math.floor(Math.random()*60)+20); }
+      historyChart.update();
+
+      // default show dashboard
+      showPage('dashboard');
+    })();
+
+  </script>
+</body>
+</html>
